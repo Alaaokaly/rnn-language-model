@@ -35,7 +35,7 @@ class TimeMachine():
         corpus = [vocab[token] for token in tokens ]
         return corpus, vocab
     def dataloader(self, train):
-        idx = slice(0, self.num_train) if train else slice(self.num_train,self.num_val)
+        idx = slice(0, self.num_train) if train else slice(self.num_train,self.num_train+ self.num_val)
         dataset = TensorDataset(self.X[idx],self.Y[idx])
         dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=train)
         return dataloader
