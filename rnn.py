@@ -1,6 +1,4 @@
-# the hidden state doesn't directly affect how far back in time the network can remember 
-# but rather affect the richiness of the representation "features" of each time step
-#so the number of hiffen units doesn't change the memory span of the network (time_steps)
+
 import math 
 import torch 
 from torch import nn 
@@ -12,6 +10,9 @@ from data import TimeMachine
 # number of hiddens is the number of features each time step has 
 # batch size is the number of sequence the model sees at each time stap and generates an equevlante 
    #number of hidden states 
+   # the hidden state doesn't directly affect how far back in time the network can remember 
+# but rather affect the richiness of the representation "features" of each time step
+#so the number of hiffen units doesn't change the memory span of the network (time_steps)
 
 class RNNScratch(nn.Module):
     def __init__(self, num_inputs, num_hiddens, sigma=0.01):
