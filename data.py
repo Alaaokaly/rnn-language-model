@@ -67,7 +67,7 @@ class Vocab:
     def to_tokens(self, indices):
         """iterrate the array by index to get the letter """
         if hasattr(indices, '__len__') and len(indices) > 1:
-            return [self.idx_to_token[int(index)] for index in indices]
+            return [self.idx_to_token[int()] for index in indices]
         return self.idx_to_token[indices]
     @property
     def unk(self):  
