@@ -35,7 +35,7 @@ class TimeMachine():
         corpus = [vocab[token] for token in tokens ]
         return corpus, vocab
     def dataloader(self, train):
-        idx = slice(0, self.num_train) if train else slice(self.num_train,self.num_val)
+        idx = slice(0, self.num_train) if train else slice(self.num_train,self.num_train+self.num_val)
         dataset = TensorDataset(self.X[idx],self.Y[idx])
         dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=train)
         return dataloader
@@ -76,14 +76,7 @@ class Vocab:
                 in __getitem__() """
         return self.token_to_index['<UNK>']
     
-data = TimeMachine(batch_size=5,num_steps=5)
-i = 1
-for x, y in data.dataloader(train = True):
-    
-    print('x:' ,x,'\n', 'y:',y)
-    i+=1
-    if i == 3 :
-        break
+
 
 
 

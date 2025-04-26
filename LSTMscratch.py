@@ -26,14 +26,14 @@ class LSTMScratch(nn.Module):
         else :
             H,C = H_C 
             outputs =[]
-            for x in inputs:
-                I = torch.sigmoid(torch.matmul(x,self.W_xi)+ 
+            for X in inputs:
+                I = torch.sigmoid(torch.matmul(X,self.W_xi)+ 
                               torch.matmul(H,self.W_hi)+ self.b_i)
                 F = torch.sigmoid(torch.matmul(X, self.W_xf))
                 O = torch.sigmoid(torch.matmul(X,self.W_xo))
                 C_tilde = torch.tanh(torch.matmul(X,self.W_xc))
 
-                C  = F*C*I*C_tilde
+                C  = F*C + I*C_tilde
                 H  = O*torch.tanh(H)
                 outputs.append(H)         
             return outputs, (H,C)
@@ -41,7 +41,12 @@ class LSTMScratch(nn.Module):
             
 
 data = TimeMachine(batch_size=1024, num_steps=32)
+val_loader = data.dataloader(train=False)
+train_loader = data.dataloader(train = True)
 lstm = LSTMScratch(num_inputs=len(data.vocab), num_hiddens=32)
-model = RNNLMScratch(lstm, vocab_size=len(data.vocab), lr=4)
-trainer = Trainer(max_epochs=50, gradient_clip_val=1, num_gpus=1)
-trainer.fit(model, data)
+model = RNNLMScratch(lstm,vocab_size=len(data.vocab), lr=1)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+trainer = Trainer(max_epochs=300, grad_clip_val=1, model = model, train_loader = train_loader,
+                   val_loader = val_loader, optimizer= optimizer)
+trainer.fit()
+model.predict('it has', 20, data.vocab)

@@ -4,6 +4,12 @@ import torch
 from torch import nn 
 from torch.nn import functional as F
 from data import TimeMachine
+import matplotlib.pyplot as plt 
+
+import os 
+import logging 
+import time 
+from datetime import datetime 
 
 # num_inputs is the size of vocab : in this case would be number of the letters in the corpus 
 # numbder of steps is the distance we have in time :sequence length 
@@ -13,6 +19,22 @@ from data import TimeMachine
    # the hidden state doesn't directly affect how far back in time the network can remember 
 # but rather affect the richiness of the representation "features" of each time step
 #so the number of hiffen units doesn't change the memory span of the network (time_steps)
+
+log_dir = "log"
+os.makedirs(log_dir, exist_ok= True)
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_file = os.path.join(log_dir, f"training_{timestamp}.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 
 class RNNScratch(nn.Module):
     def __init__(self, num_inputs, num_hiddens, sigma=0.01):
@@ -58,12 +80,11 @@ class RNNLMScratch(nn.Module):
 
     def training_step(self, batch):
         l = self.loss(self(*batch[:-1]), batch[-1])
-        self.plot('ppl', torch.exp(l), train=True)
         return l
 
-    def validation_step(self, batch):
-        l = self.loss(self(*batch[:-1]), batch[-1])
-        self.plot('ppl', torch.exp(l), train=False)
+    def validation_step(self, x, y):
+        outputs = self(x)
+        return self.loss(outputs, y)
 
     def one_hot(self, X):
         return F.one_hot(X.T, self.vocab_size).type(torch.float32)
@@ -109,11 +130,16 @@ class Trainer :
         self.max_epochs = max_epochs
         self.gradient_clip_val  = grad_clip_val
         self.device = device
+        self.log_interval = 10  # Log every 10 batches
+        self.checkpoint_interval = 50  # Save checkpoint every 50 epochs
+        self.results_dir = "results"
+        os.makedirs(self.results_dir, exist_ok=True)
 
-    def train_one_epoch (self): # train by epoch 
+    def train_one_epoch (self, epoch = None): # train by epoch 
         self.model.train()
         total_loss = 0 
-        for x, y in self.trainer_loader:
+        start_time = time.time()
+        for batch_idx, (x, y) in enumerate(self.trainer_loader):
             x, y = x.to(self.device), y.to(self.device) # Pytorch method to transfer a tensor, so data and model are on the same device
             self.optimizer.zero_grad()
             outputs = self.model(x)
@@ -126,6 +152,14 @@ class Trainer :
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(),self.gradient_clip_val)
             self.optimizer.step() #update the new values for params using grad 
             total_loss+= loss.item()
+            if (batch_idx + 1) % self.log_interval == 0:
+                batch_loss = loss.item()
+                perplexity = math.exp(batch_loss)
+                elapsed = time.time() - start_time
+                logger.info(f"Batch: {batch_idx+1}/{len(self.trainer_loader)}, "
+                            f"Loss: {batch_loss:.4f}, Perplexity: {perplexity:.4f}, "
+                            f"Time: {elapsed:.2f}s")
+                start_time = time.time()
         return total_loss / len(self.trainer_loader) # mean error value 
     
     def predict(self, prefix, num_preds, vocab, device=None):
@@ -141,37 +175,69 @@ class Trainer :
                 outputs.append(int(Y.argmax(axis=2).reshape(1)))
         return ''.join([vocab.idx_to_token[i] for i in outputs])
     
-    def validate (self):
-        self.model.validation_step()
+    def validate(self):
+        self.model.eval()  # Set model to evaluation mode
         total_loss = 0 
+        start_time = time.time()
         with torch.no_grad():
-            for x, y in self.val_loader:
+            for x, y in self.val_loader:  # Unpack directly as x, y
                 x, y = x.to(self.device), y.to(self.device)
                 outputs = self.model(x)
-                loss = self.model.loss(outputs, y )
+                loss = self.model.loss(outputs, y)
                 total_loss += loss.item()
-        return total_loss / len(self.trainer_loader) # mean error value 
+        val_loss = total_loss / len(self.val_loader)
+        perplexity = math.exp(val_loss)
+        elapsed = time.time() - start_time
+        
+        logger.info(f"Validation  Loss: {val_loss:.4f}, "
+                    f"Perplexity: {perplexity:.4f}, Time: {elapsed:.2f}s")
+        return val_loss# Return mean error value
     
-    def fit (self):
-        with open('training_results.txt', 'w') as f:
-            for epoch in range(1,self.max_epochs):
-                train_loss = self.train_one_epoch()
-                val_loss = self.validate() if self.val_loader else None
-    
-                if val_loss is not None:
-                    log_message = f"Epoch {epoch}/{self.max_epochs} - Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}"
-                    f.write(log_message + '\n')
-                   
-                    print(log_message)
-                else:
-                    log_message = f"Epoch {epoch}/{self.max_epochs} - Train Loss: {train_loss:.4f}"
-                    f.write(log_message + '\n')
-                   
-                    print(log_message)
+    def fit(self):
+        logger.info(f"Starting training for {self.max_epochs} epochs")
+        train_losses = []
+        val_losses = []
+        
+        for epoch in range(1, self.max_epochs + 1):
+            train_loss = self.train_one_epoch()
+            train_losses.append(train_loss)
+            
+            if self.val_loader:
+                val_loss = self.validate()
+                val_losses.append(val_loss)
                 
-                # Flush to ensure results are written immediately
-                f.flush()
-
+                logger.info(f"Epoch {epoch}/{self.max_epochs} - "
+                          f"Train Loss: {train_loss:.4f}, "
+                          f"Val Loss: {val_loss:.4f}")
+            else:
+                logger.info(f"Epoch {epoch}/{self.max_epochs} - "
+                          f"Train Loss: {train_loss:.4f}")
+                    
+        
+            
+           
+        plt.figure(figsize=(10, 5))
+        plt.plot(train_losses, label='Training Loss')
+        if val_losses:
+            plt.plot(val_losses, label='Validation Loss')
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.legend()
+        plt.savefig('loss_plot.png')
+        plt.close()
+        
+        # Plot perplexity
+        plt.figure(figsize=(10, 5))
+        plt.plot([torch.exp(torch.tensor(l)).item() for l in train_losses], label='Training Perplexity')
+        if val_losses:
+            plt.plot([torch.exp(torch.tensor(l)).item() for l in val_losses], label='Validation Perplexity')
+        plt.xlabel('Epoch')
+        plt.ylabel('Perplexity')
+        plt.legend()
+        plt.savefig('perplexity_plot.png')
+        plt.close()
+                
+       
 
 
 data = TimeMachine(batch_size=1024, num_steps=32)
